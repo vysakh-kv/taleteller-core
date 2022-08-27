@@ -114,6 +114,7 @@ def mergeb64():
         audios = request.json["audio"]
         afmt = request.json["audiofmt"]
         ifmt = request.json["imgfmt"]
+        
 
         N = len(images)
         clips = []

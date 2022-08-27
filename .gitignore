@@ -1,4 +1,3 @@
-.env
 venv
 *.jpeg
 *jpeg
@@ -6,3 +5,4 @@ venv
 *.mp4
 temp*.py
 index.js
+config.json
