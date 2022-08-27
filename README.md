@@ -4,11 +4,11 @@
 
 -> pip install virtualenv
 -> python3 -m venv venv
--> source venv 
+-> source venv
 
 ## Installing dependencies
 
--> pip install requirements.txt
+-> pip install -r requirements.txt
 
 ## Starting Flask Server
 
