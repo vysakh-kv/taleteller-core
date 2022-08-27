@@ -29,3 +29,14 @@ def dalle_img():
         "error": "dalle backend not running!",
     }
 
+@app.route("/tts", methods=['GET','POST'])
+def tts():
+    # Request ID Logic here
+    id = 'id'
+    if request.method=='POST':
+        v = request.json["prompt"], request.json["lang"]
+        speak(v[0], v[1], save=True, file=f"{id}.mp3", speak=False)
+        return send_file(
+            f"{id}.mp3", 
+            mimetype="audio/mpeg", 
+            as_attachment=True)
