@@ -1,0 +1,8 @@
+.env
+venv
+*.jpeg
+*jpeg
+*.mp3
+*.mp4
+temp*.py
+index.js
