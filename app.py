@@ -6,15 +6,17 @@ from text_to_speech import speak
 from moviepy.editor import *
 import requests,base64,yake,random,threading
 from craiyon import Craiyon
+import numpy as np
+from scipy.io.wavfile import write
 
 
 app = Flask(__name__)
 
 config = dotenv_values(".env")
 
-def concatenate(clip_paths, id, method="compose"):
+def concatenate(clip_paths, id, method="chain"):
 
-    clips = [VideoFileClip(c) for c in clip_paths]
+    clips = [VideoFileClip(c).fx(vfx.fadein, 0.5).fx(vfx.fadeout, 0.5) for c in clip_paths]
 
     # clip = VideoFileClip()
     if method == "reduce":
@@ -24,8 +26,8 @@ def concatenate(clip_paths, id, method="compose"):
 
         clips = [c.resize(newsize=(min_width, min_height)) for c in clips]
         final_clip = concatenate_videoclips(clips)
-    elif method == "compose":
-        final_clip = concatenate_videoclips(clips, method="compose")
+    elif method == "chain":
+        final_clip = concatenate_videoclips(clips, method="chain")
 
     final_clip.write_videofile(f"{id}_merged.mp4")
 
@@ -39,14 +41,22 @@ def gen_clips(iprompt,numImg):
     except:
         return None
 
-def add_static_image_to_audio(image_path, audio_path, output_path):
+def add_static_image_to_audio(image_path, audio_path, output_path, bgm_path=None):
     
     audio_clip = AudioFileClip(audio_path)
     image_clip = ImageClip(image_path)
     video_clip = image_clip.set_audio(audio_clip)
 
     video_clip.duration = audio_clip.duration
-    video_clip.fps = 1
+    video_clip.fps = 30
+    if bgm_path!=None:
+        audio_background = AudioFileClip(bgm_path).fx(afx.volumex,0.2)
+        d = video_clip.duration
+        video_clip.audio = video_clip.audio.fx(afx.volumex,1.1)
+        # print(audio_background.duration)
+        final_audio = CompositeAudioClip([audio_background, video_clip.audio])
+        video_clip = video_clip.set_audio(final_audio)
+        video_clip = video_clip.subclip(0,d)
     video_clip.write_videofile(output_path)
     return
 
@@ -78,7 +88,9 @@ def craiyon_img():
     data = generator.generate(request.json["prompt"])
     print(data) # Generates 9 images by default and you cannot change that
     return {
-        "data": data.images,
+        "data": {
+            "generatedImgs": data.images,
+            "generatedImgsFormat": "jpeg"},
         "error": "craiyon backend error" if data==None else None,
     }
 
@@ -90,7 +102,6 @@ def tts():
     if request.method=='POST':
         v = request.json["prompt"], request.json["lang"]
         speak(v[0], v[1], save=True, file=f"{id}.mp3", speak=False)
-
         return send_file(
             f"{id}.mp3", 
             mimetype="audio/mpeg", 
@@ -103,13 +114,17 @@ def tts_64():
     id = 'id'
     if request.method=='POST':
         v = request.json["prompt"], request.json["lang"]
-        speak(v[0], v[1], save=True, file=f"{id}.mp3", speak=False)
-
-        f = open(f"{id}.mp3","rb")
-        b = base64.b64encode(f.read())
-        f.close()
+        alt = request.json.get("alt")
+        if alt==None:
+            speak(v[0], v[1], save=True, file=f"{id}.mp3", speak=False)
+            f = open(f"{id}.mp3","rb")
+            b = str(base64.b64encode(f.read()))
+            f.close()
+        else:
+            response = requests.post(url = config["SYNTHURL"], json = {"prompt": v[0]})
+            b = response.json()["data"]
     return {
-            "data": str(b)[2:len(b)],
+            "data": b[2:len(b)],
             "error": None
         }
 
@@ -123,7 +138,7 @@ def merge():
         images = request.files.getlist("images")
         audios = request.files.getlist("audio")
         bgms = request.files.getlist("bgm")
-
+        print(bgms)
         N = len(images)
         clips = []
         print(images)
@@ -138,7 +153,13 @@ def merge():
             audios[i].save(f)
             f.close()
 
-            add_static_image_to_audio(images[i].filename,audios[i].filename,f"{id}_{images[i].filename}.mp4")
+            if bgms!=[]:
+                f = open(f"{bgms[i].filename}","wb")
+                bgms[i].save(f)
+                f.close()
+                add_static_image_to_audio(images[i].filename,audios[i].filename,f"{id}_{images[i].filename}.mp4",bgms[i].filename)
+            else:
+                add_static_image_to_audio(images[i].filename,audios[i].filename,f"{id}_{images[i].filename}.mp4")
             clips.append(f"{id}_{images[i].filename}.mp4")
         concatenate(clips,id)
         return send_file(
@@ -157,7 +178,7 @@ def mergeb64():
         audios = request.json["audio"]
         afmt = request.json["audiofmt"]
         ifmt = request.json["imgfmt"]
-
+        bgms = request.json.get("bgms")
 
         N = len(images)
         clips = []
@@ -168,13 +189,27 @@ def mergeb64():
             f = open(f"{id}_{i}.{afmt}", "wb")
             f.write(base64.b64decode(audios[i]))
             f.close()
-            add_static_image_to_audio(f"{id}_{i}.{ifmt}",f"{id}_{i}.{afmt}",f"{id}_{i}.mp4")
+            if bgms!=[]:
+                f = open(f"{id}_{i}_bgm.{afmt}", "wb")
+                f.write(base64.b64decode(bgms[i]))
+                f.close()
+                add_static_image_to_audio(f"{id}_{i}.{ifmt}",f"{id}_{i}.{afmt}",f"{id}_{i}.mp4",f"{id}_{i}_bgm.{afmt}")
+            else:
+                add_static_image_to_audio(f"{id}_{i}.{ifmt}",f"{id}_{i}.{afmt}",f"{id}_{i}.mp4")
             clips.append(f"{id}_{i}.mp4")
         concatenate(clips,id)
-        return send_file(
-            f"{id}_merged.mp4", 
-            mimetype="video/mp4", 
-            as_attachment=True)
+        # return send_file(
+        #     f"{id}_merged.mp4", 
+        #     mimetype="video/mp4", 
+        #     as_attachment=True)
+        f = open(f"{id}_merged.mp4","rb")
+        b = base64.b64encode(f.read())
+        f.close()
+        return {
+            "data": str(b)[2:len(b)],
+            "error": None
+        }
+
 
 
 # @app.route("/magic", methods=['POST'])
