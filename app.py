@@ -189,7 +189,7 @@ def mergeb64():
             f = open(f"{id}_{i}.{afmt}", "wb")
             f.write(base64.b64decode(audios[i]))
             f.close()
-            if bgms!=[]:
+            if bgms!=[] and bgms!=None:
                 f = open(f"{id}_{i}_bgm.{afmt}", "wb")
                 f.write(base64.b64decode(bgms[i]))
                 f.close()
